@@ -144,11 +144,15 @@ async fn generate_keys() -> String {
     }
 
     let pk = sk.verifying_key();
-    if let Err(e) = fs::write("license_pk.hex", hex::encode(pk.to_bytes())) {
+    let pk_hex = hex::encode(pk.to_bytes());
+    if let Err(e) = fs::write("license_pk.hex", &pk_hex) {
         return format!("Failed to write license_pk.hex: {}", e);
     }
 
-    "Generated license_sk.bin and license_pk.hex in server directory.".to_string()
+    format!(
+        "Generated license_sk.bin and license_pk.hex in server directory.\nPublic Key (Hex): {}",
+        pk_hex
+    )
 }
 
 async fn sign_license(Json(req): Json<SignRequest>) -> Result<Json<SignedLicense>, String> {
