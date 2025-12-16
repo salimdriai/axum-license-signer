@@ -31,10 +31,13 @@ const INDEX_HTML: &str = r#"
 <body>
     <h1>License Signer Tool</h1>
 
+
     <section>
-        <h2>1. Generate Keys</h2>
-        <p>Generate a new Keypair (private `license_sk.bin` and public `license_pk.hex`) in the server's working directory.</p>
-        <button onclick="generateKeys()">Generate Keys</button>
+        <h2>1. Key Management</h2>
+        <p>Current Public Key (Hex):</p>
+        <pre id="currentKey">Loading...</pre>
+        <p>Warning: Generating new keys will overwrite the existing ones. You will need to rebuild your app with the new public key.</p>
+        <button onclick="generateKeys()" style="background-color: #dc3545;">Regenerate Keys (Overwrite)</button>
         <pre id="keyOutput"></pre>
     </section>
 
@@ -53,13 +56,29 @@ const INDEX_HTML: &str = r#"
     </section>
 
     <script>
+        window.onload = loadCurrentKey;
+
+        async function loadCurrentKey() {
+            const el = document.getElementById('currentKey');
+            try {
+                const res = await fetch('/keys/current');
+                const text = await res.text();
+                el.textContent = text;
+            } catch (e) {
+                el.textContent = "Error loading key: " + e;
+            }
+        }
+
         async function generateKeys() {
+            if (!confirm("Are you sure? This will overwrite existing keys!")) return;
+            
             const output = document.getElementById('keyOutput');
             output.textContent = "Generating...";
             try {
                 const res = await fetch('/keys/gen', { method: 'POST' });
                 const text = await res.text();
                 output.textContent = text;
+                loadCurrentKey(); // Refresh displayed key
             } catch (e) {
                 output.textContent = "Error: " + e;
             }
@@ -137,6 +156,13 @@ async fn index() -> Html<&'static str> {
     Html(INDEX_HTML)
 }
 
+async fn get_current_key() -> String {
+    match fs::read_to_string("license_pk.hex") {
+        Ok(k) => k,
+        Err(_) => "No public key found. Please generate one.".to_string(),
+    }
+}
+
 async fn generate_keys() -> String {
     let sk = SigningKey::generate(&mut rand::thread_rng());
     if let Err(e) = fs::write("license_sk.bin", sk.to_bytes()) {
@@ -149,10 +175,7 @@ async fn generate_keys() -> String {
         return format!("Failed to write license_pk.hex: {}", e);
     }
 
-    format!(
-        "Generated license_sk.bin and license_pk.hex in server directory.\nPublic Key (Hex): {}",
-        pk_hex
-    )
+    format!("Generated new keys.\nPublic Key (Hex): {}", pk_hex)
 }
 
 async fn sign_license(Json(req): Json<SignRequest>) -> Result<Json<SignedLicense>, String> {
@@ -186,6 +209,7 @@ async fn sign_license(Json(req): Json<SignRequest>) -> Result<Json<SignedLicense
 async fn main() -> shuttle_axum::ShuttleAxum {
     let router = Router::new()
         .route("/", get(index))
+        .route("/keys/current", get(get_current_key))
         .route("/keys/gen", post(generate_keys))
         .route("/license/sign", post(sign_license));
 
